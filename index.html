@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta name="description" content="Split, merge, reorder, and remove GPX segments."/>
+        <script src="https://code.jquery.com/jquery-3.4.1.slim.min.js" integrity="sha256-pasqAKBDmFT4eHoN2ndd6lN370kFiGUFyTiUHWhU7k8=" crossorigin="anonymous"></script>
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/foundation-sites@6.4.3/dist/css/foundation.min.css" integrity="sha256-GSio8qamaXapM8Fq9JYdGNTvk/dgs+cMLgPeevOYEx0= sha384-wAweiGTn38CY2DSwAaEffed6iMeflc0FMiuptanbN4J+ib+342gKGpvYRWubPd/+ sha512-QHEb6jOC8SaGTmYmGU19u2FhIfeG+t/hSacIWPpDzOp5yygnthL3JwnilM7LM1dOAbJv62R+/FICfsrKUqv4Gg==" crossorigin="anonymous">
+        <script src="https://cdn.jsdelivr.net/npm/foundation-sites@6.4.3/dist/js/foundation.min.js" integrity="sha256-mRYlCu5EG+ouD07WxLF8v4ZAZYCA6WrmdIXyn1Bv9Vk= sha384-KzKofw4qqetd3kvuQ5AdapWPqV1ZI+CnfyfEwZQgPk8poOLWaabfgJOfmW7uI+AV sha512-0gHfaMkY+Do568TgjJC2iMAV0dQlY4NqbeZ4pr9lVUTXQzKu8qceyd6wg/3Uql9qA2+3X5NHv3IMb05wb387rA==" crossorigin="anonymous"></script>
+        <script src='https://api.mapbox.com/mapbox-gl-js/v1.8.0/mapbox-gl.js'></script>
+        <link href='https://api.mapbox.com/mapbox-gl-js/v1.8.0/mapbox-gl.css' rel='stylesheet'/>
+        <script src="https://unpkg.com/@tmcw/togeojson"></script>
+        <style>
+            html, body {
+                width: 100%;
+                height: 100%;
+                margin: 0;
+                padding: 0;
+            }
+
+            body {
+                display: flex;
+            }
+
+            .sidebar {
+                flex: 0 0 300px;
+                max-width: 300px;
+                background-color: white;
+                padding: 16px;
+                display: flex;
+                flex-direction: column;
+                align-self: stretch;
+            }
+
+            #upload-error {
+                display: none;
+                color: red;
+                margin-bottom: 4px;
+            }
+
+            #file-input {
+                display: none;
+            }
+
+            #layers .selected .name {
+                font-weight: bold;
+            }
+
+            #map {
+                flex: 1 1 auto;
+            }
+
+            .content {
+                flex: 1 1 auto;
+                display: flex;
+                flex-direction: column;
+            }
+
+            .layer {
+                display: flex;
+                margin: 16px 0;
+            }
+
+            .layer .name {
+                flex: 1 1 1px;
+                min-width: 0;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                overflow: hidden;
+            }
+
+            .layer .actions {
+                flex: 0 0 auto;
+            }
+        </style>
+    </head>
+    <body>
+        <main class="sidebar">
+            <h3>GPX Editor</h3>
+            <p>This tool serves my use case of merging Strava gpx files.</p>
+            <p>If you would like it to do more, please file a feature request. There are also many bugs, so bug reports are also welcome.</p>
+            <div class="content">
+                <div id="layers"></div>
+                <div id="upload-error">That file doesn't seem to be a valid gpx file, please try again.
+                </div>
+                <label for="file-input" class="primary button">Add a GPX file
+                </label>
+                <input type="file" id="file-input" accept=".gpx"/>
+                <a href="#" class="secondary button" id="export" download="merged.gpx">Download merged GPX
+                </a>
+            </div>
+            <div class="attribution">
+                <hr/>
+                Created by <a href="//kevmo314.com" target="_blank">Kevin</a>
+                - GitHub
+            
+            
+            
+            
+            </div>
+        </main>
+        <div id="map"></div>
+        <script>
+            $(document).ready(function() {
+                mapboxgl.accessToken = 'pk.eyJ1Ijoia2V2bW8zMTQiLCJhIjoiY2oyMDFlMGpsMDN3bTJ4bjR1MzRrbDFleCJ9.7XEB3HHBGr-N6ataUZh_6g';
+
+                var map = new mapboxgl.Map({
+                    container: 'map',
+                    style: 'mapbox://styles/mapbox/streets-v11'
+                });
+
+                var files = [];
+                var selected = -1;
+
+                var actions = new mapboxgl.Popup({
+                    closeButton: true,
+                    closeOnClick: true
+                });
+
+                $("#export").click(function() {
+                    if (files.length == 0) {
+                        return;
+                    }
+                    var gpx = files.slice(1).reduce(function(gpx, file) {
+                        $(gpx).find("trkseg").append($(file.data).find("trkseg").children());
+                        return gpx;
+                    }, files[0].data.cloneNode(true));
+                    const a = document.createElement("a");
+                    a.href = URL.createObjectURL(new Blob([gpx.firstChild.outerHTML],{
+                        type: "application/xml"
+                    }));
+                    a.setAttribute("download", "export.gpx");
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                });
+
+                function id() {
+                    return Math.random().toString();
+                }
+
+                function addGeoJson(file) {
+                    files.push(file);
+
+                    map.addSource(file.name, {
+                        'type': 'geojson',
+                        'data': file.geojson
+                    })
+
+                    map.addLayer({
+                        'id': file.name + "-line",
+                        'type': 'line',
+                        'source': file.name,
+                        'layout': {
+                            'line-join': 'round',
+                            'line-cap': 'round'
+                        },
+                        'paint': {
+                            'line-color': '#88F',
+                            'line-width': 4
+                        }
+                    });
+
+                    map.addLayer({
+                        'id': file.name + "-marker",
+                        'type': 'circle',
+                        'source': file.name,
+                        'layout': {
+                            'visibility': 'none'
+                        },
+                        'paint': {
+                            'circle-color': '#F00'
+                        }
+                    });
+
+                    var index = files.length - 1;
+
+                    map.on('click', file.name + "-line", function() {
+                        select(index);
+                    });
+
+                    map.on('click', file.name + "-marker", function(e) {
+                        if (selected == -1) {
+                            throw new Error("Invalid selected layer.");
+                        }
+                        var delta = Math.round(e.lngLat.lng / 360);
+
+                        var search = [e.lngLat.lng - delta * 360, e.lngLat.lat];
+
+                        var coordinates = files[selected].geojson.features[0].geometry.coordinates;
+
+                        function dist(a, b) {
+                            return Math.pow(a[0] - b[0], 2) + Math.pow(a[1] - b[1], 2);
+                        }
+
+                        var closestIndex = coordinates.reduce(function(prevIndex, next, nextIndex) {
+                            return dist(search, next) < dist(search, coordinates[prevIndex]) ? nextIndex : prevIndex;
+                        }, 0);
+
+                        var description = $("<div><a class='split' href='#'>Split</a> | <a class='delete' href='#'>Delete</a></div>");
+
+                        description.find(".split").click(function(e) {
+                            var cloned = files[selected].data.cloneNode(true);
+
+                            var segment = $(files[selected].data).find("trkseg");
+
+                            segment.children().slice(closestIndex).remove();
+                            $(cloned).find("trkseg").children().slice(0, closestIndex).remove();
+
+                            actions.remove();
+                            // Mutation occurred, so just propagate an update.
+                            map.getSource(files[selected].name).setData(files[selected].geojson = toGeoJSON.gpx(files[selected].data));
+                            // Then add the source.
+                            addGeoJson({
+                                name: id(),
+                                data: cloned,
+                                geojson: toGeoJSON.gpx(cloned)
+                            });
+                        });
+
+                        description.find(".delete").click(function(e) {
+                            var segment = files[selected].data.find("trkseg");
+
+                            segment.children().eq(closestIndex).remove();
+
+                            actions.remove();
+                            // Mutation occurred, so just propagate an update.
+                            map.getSource(files[selected].name).setData(files[selected].geojson = toGeoJSON.gpx(files[selected].data));
+                        });
+
+                        actions.setLngLat(coordinates[closestIndex]).setDOMContent(description.get(0)).addTo(map);
+                    });
+
+                    if (files.length == 1) {
+                        fitBounds();
+                    }
+
+                    render();
+                }
+
+                function select(index) {
+                    selected = (selected == index ? -1 : index);
+
+                    render();
+
+                    for (var i = 0; i < files.length; i++) {
+                        map.setLayoutProperty(files[i].name + "-line", "visibility", selected == i ? "none" : "visible");
+                        map.setLayoutProperty(files[i].name + "-marker", "visibility", selected == i ? "visible" : "none");
+                    }
+                }
+
+                function fitBounds() {
+                    if (files.length == 0) {
+                        return;
+                    }
+                    var coordinates = $.map(files, function(file) {
+                        return file.geojson.features[0].geometry.coordinates;
+                    });
+
+                    map.fitBounds(coordinates.reduce(function(bounds, coord) {
+                        return bounds.extend(coord);
+                    }, new mapboxgl.LngLatBounds(coordinates[0],coordinates[0])), {
+                        padding: 32
+                    });
+                }
+
+                function render() {
+                    $("#layers").empty();
+                    files.forEach(function(file, index) {
+                        var row = $("<div class='layer'><div class='name'>" + file.geojson.features[0].properties.name + "</div><div class='actions'><a class='move-up' href='#'>▲</a><a class='move-down'>▼</a><a class='delete'>🗙</a></div></div>");
+
+                        row.find(".move-up").click(function() {
+                            if (index > 0) {
+                                files.splice(index, 1);
+                                files.splice(index - 1, 0, file);
+                                if (selected == index) {
+                                    selected--;
+                                } else if (selected == index - 1) {
+                                    selected++;
+                                }
+                                render();
+                            }
+                        });
+
+                        row.find(".move-down").click(function() {
+                            if (index < files.length - 1) {
+                                files.splice(index, 1);
+                                files.splice(index + 1, 0, file);
+                                if (selected == index) {
+                                    selected++;
+                                } else if (selected == index + 1) {
+                                    selected--;
+                                }
+                                render();
+                            }
+                        });
+
+                        row.find(".delete").click(function() {
+                            files.splice(index, 1);
+                            if (index == selected) {
+                                selected = -1;
+                            }
+                            map.removeLayer(file.name + "-line");
+                            map.removeLayer(file.name + "-marker");
+                            map.removeSource(file.name);
+                            render();
+                        });
+
+                        row.toggleClass("selected", index == selected);
+                        map.setPaintProperty(file.name + "-line", 'line-color', index == selected ? '#F00' : '#888');
+
+                        row.click(function() {
+                            select(index);
+                        });
+
+                        $("#layers").append(row);
+                    });
+                    $("#upload-error").hide();
+                }
+
+                $('input[type=file]').on('change', function(event) {
+                    if (!event.target.files) {
+                        return;
+                    }
+                    for (var i = 0; i < event.target.files.length; i++) {
+                        var reader = new FileReader();
+                        var file = event.target.files[i];
+                        reader.onload = function(evt) {
+                            try {
+                                var data = new DOMParser().parseFromString(evt.target.result, "text/xml");
+                                addGeoJson({
+                                    name: id(),
+                                    data: data,
+                                    geojson: toGeoJSON.gpx(data)
+                                });
+                            } catch (e) {
+                                $("#upload-error").show();
+                                console.error(e);
+                            }
+                        }
+                        reader.readAsText(event.target.files[i]);
+                    }
+                });
+            });
+        </script>
+    </body>
+</html>

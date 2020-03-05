@@ -120,7 +120,7 @@
                         return;
                     }
                     var gpx = files.slice(1).reduce(function(gpx, file) {
-                        $(gpx).find("trkseg").append($(file.data).find("trkseg").children());
+                        $(gpx).find("trkseg").get(0).innerHTML += $(file.data).find("trkseg").get(0).innerHTML;
                         return gpx;
                     }, files[0].data.cloneNode(true));
                     const a = document.createElement("a");
